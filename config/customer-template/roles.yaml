@@ -1,0 +1,37 @@
+# roles.yaml — Role to Access Tag Mapping
+# This file defines which access_tags each role can see.
+# The phx-api service reads this at startup.
+#
+# SECURITY: Only the API enforces this mapping.
+# The model never sees this file and never makes access decisions.
+
+tenant_id: "acme-corp"
+
+role_tag_map:
+  admin:
+    - admin
+    - management
+    - operations
+    - hr
+    - shared_user
+
+  management:
+    - management
+    - shared_user
+
+  operations:
+    - operations
+    - shared_user
+
+  hr:
+    - hr
+    - shared_user
+
+  shared_user:
+    - shared_user
+
+# Notes:
+# - A user may have multiple roles; tags are unioned across all roles
+# - access_tags on chunks are checked with an ANY match (overlap)
+# - Admins see everything
+# - shared_user is the baseline tag all users can see

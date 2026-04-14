@@ -1,0 +1,165 @@
+# sources.yaml — Customer Source Configuration
+# Define all data sources for this deployment.
+# This file is read by the phx-ingest service at startup and on each sync cycle.
+#
+# SECURITY NOTES:
+#   - All database credentials must use READ-ONLY accounts
+#   - File paths are mounted read-only into the container
+#   - Do not use admin or write-capable database accounts here
+
+tenant_id: "acme-corp"
+
+sources:
+
+  # ---------------------------------------------------------------------------
+  # FILESYSTEM SOURCES
+  # Each filesystem source points to a directory mounted into the ingest container.
+  # ---------------------------------------------------------------------------
+
+  - id: "shared-docs"
+    type: filesystem
+    enabled: true
+    path: /customer_data/shared
+    department: shared
+    access_tags:
+      - shared_user
+      - operations
+      - hr
+      - management
+      - admin
+    doc_type: policy
+    include_patterns:
+      - "**/*.txt"
+      - "**/*.md"
+      - "**/*.pdf"
+      - "**/*.docx"
+      - "**/*.csv"
+      - "**/*.xlsx"
+    exclude_patterns:
+      - "**/.DS_Store"
+      - "**/~$*"
+      - "**/*.tmp"
+    chunk_size: 512
+    chunk_overlap: 64
+
+  - id: "operations-docs"
+    type: filesystem
+    enabled: true
+    path: /customer_data/operations
+    department: operations
+    access_tags:
+      - operations
+      - management
+      - admin
+    doc_type: procedure
+    include_patterns:
+      - "**/*.txt"
+      - "**/*.md"
+      - "**/*.pdf"
+      - "**/*.docx"
+    exclude_patterns:
+      - "**/.DS_Store"
+      - "**/~$*"
+    chunk_size: 512
+    chunk_overlap: 64
+
+  - id: "hr-docs"
+    type: filesystem
+    enabled: true
+    path: /customer_data/hr
+    department: hr
+    access_tags:
+      - hr
+      - admin
+    doc_type: hr_policy
+    include_patterns:
+      - "**/*.txt"
+      - "**/*.md"
+      - "**/*.pdf"
+      - "**/*.docx"
+    exclude_patterns:
+      - "**/.DS_Store"
+    chunk_size: 512
+    chunk_overlap: 64
+
+  - id: "management-docs"
+    type: filesystem
+    enabled: true
+    path: /customer_data/management
+    department: management
+    access_tags:
+      - management
+      - admin
+    doc_type: strategy
+    include_patterns:
+      - "**/*.txt"
+      - "**/*.md"
+      - "**/*.pdf"
+      - "**/*.docx"
+      - "**/*.xlsx"
+    exclude_patterns:
+      - "**/.DS_Store"
+    chunk_size: 512
+    chunk_overlap: 64
+
+  # ---------------------------------------------------------------------------
+  # POSTGRES SOURCE EXAMPLE
+  # Connects to a read-only account on an external Postgres database.
+  # ---------------------------------------------------------------------------
+
+  # - id: "ops-database"
+  #   type: postgres
+  #   enabled: false
+  #   host: "${EXT_PG_HOST}"
+  #   port: 5432
+  #   database: "${EXT_PG_DB}"
+  #   user: "${EXT_PG_USER}"
+  #   password: "${EXT_PG_PASSWORD}"
+  #   department: operations
+  #   access_tags:
+  #     - operations
+  #     - management
+  #     - admin
+  #   doc_type: database_record
+  #   # Only these tables/views are allowed — no arbitrary queries
+  #   allowed_tables:
+  #     - schema: public
+  #       table: work_orders
+  #       title_column: order_name
+  #       body_columns:
+  #         - description
+  #         - status
+  #         - notes
+  #     - schema: public
+  #       table: equipment_log
+  #       title_column: equipment_name
+  #       body_columns:
+  #         - event_type
+  #         - event_notes
+
+  # ---------------------------------------------------------------------------
+  # SQL SERVER SOURCE EXAMPLE
+  # ---------------------------------------------------------------------------
+
+  # - id: "erp-database"
+  #   type: sqlserver
+  #   enabled: false
+  #   host: "${EXT_MSSQL_HOST}"
+  #   port: 1433
+  #   database: "${EXT_MSSQL_DB}"
+  #   user: "${EXT_MSSQL_USER}"
+  #   password: "${EXT_MSSQL_PASSWORD}"
+  #   department: operations
+  #   access_tags:
+  #     - operations
+  #     - management
+  #     - admin
+  #   doc_type: erp_record
+  #   allowed_tables:
+  #     - schema: dbo
+  #       table: Products
+  #       title_column: ProductName
+  #       body_columns:
+  #         - Description
+  #         - Category
+  #         - Status

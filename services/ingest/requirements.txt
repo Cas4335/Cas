@@ -1,0 +1,18 @@
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+pydantic==2.7.1
+pydantic-settings==2.2.1
+PyYAML==6.0.1
+httpx==0.27.0
+qdrant-client==1.9.1
+structlog==24.1.0
+python-dotenv==1.0.1
+
+# File parsers
+pypdf==4.2.0
+python-docx==1.1.0
+openpyxl==3.1.2
+chardet==5.2.0
+
+# Database connectors
+pymssql==2.3.0

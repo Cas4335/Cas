@@ -1,0 +1,4 @@
+# Trainer requirements — minimal scaffold only
+# Actual fine-tuning libraries would be added here when the training
+# feature is implemented. Not required for v1 runtime.
+structlog==24.1.0

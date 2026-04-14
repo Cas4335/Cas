@@ -1,0 +1,41 @@
+version: "3.9"
+
+# PHX Trainer Scaffold — OPTIONAL, ISOLATED
+# This compose file is NOT required for v1 runtime.
+# It provides a scaffold for future fine-tuning or training workflows.
+#
+# Usage (explicitly opt-in only):
+#   docker compose -f docker/compose.yaml -f docker/compose.train.yaml up phx-trainer
+#
+# IMPORTANT: This service has NO access to the production Qdrant, API, or Postgres.
+# It is intentionally isolated from the runtime stack.
+
+networks:
+  phx-train-net:
+    driver: bridge
+
+volumes:
+  phx_trainer_data:
+  phx_trainer_models:
+
+services:
+  phx-trainer:
+    build:
+      context: ../services/trainer
+      dockerfile: Dockerfile
+    container_name: phx-trainer
+    profiles:
+      - training  # Only starts when --profile training is passed
+    networks:
+      - phx-train-net  # Separate network — no access to phx-net
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TRAINER_BASE_MODEL: ${TRAINER_BASE_MODEL:-llama3.2}
+    volumes:
+      - phx_trainer_data:/app/data
+      - phx_trainer_models:/app/models
+      # Training data mount (read-only approved exports only)
+      - /mnt/training-data:/training_data:ro
+    # Trainer does not expose ports to the main network
+    # It is a batch job, not a long-running service
+    restart: "no"

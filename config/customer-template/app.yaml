@@ -1,0 +1,45 @@
+# app.yaml — Application Configuration
+# Controls runtime behavior of the phx-api service.
+
+tenant_id: "acme-corp"
+
+# ---------------------------------------------------------------------------
+# RAG behavior
+# ---------------------------------------------------------------------------
+rag:
+  # Number of chunks to retrieve per query
+  top_k: 8
+
+  # strict_mode: true means the model is instructed to answer ONLY from
+  # retrieved context and must say "I don't have enough information" if evidence
+  # is insufficient. Set to false to allow more general answers (not recommended
+  # for compliance-sensitive deployments).
+  strict_mode: true
+
+  # Minimum similarity score (0.0–1.0) below which chunks are discarded
+  min_score: 0.30
+
+  # Maximum tokens to include in context window from retrieved chunks
+  max_context_tokens: 3000
+
+# ---------------------------------------------------------------------------
+# Answer format
+# ---------------------------------------------------------------------------
+answer:
+  # Include citations (source references) in every response
+  include_citations: true
+
+  # When the model cannot answer from context, return this message
+  uncertainty_message: >
+    I don't have enough information in the approved documents to answer
+    that question confidently. Please consult your relevant team or check
+    the source documents directly.
+
+# ---------------------------------------------------------------------------
+# Audit logging
+# ---------------------------------------------------------------------------
+audit:
+  # Log every query and its retrieved chunk IDs
+  log_queries: true
+  # Log the full answer text (may be disabled for very high-volume deployments)
+  log_answers: true

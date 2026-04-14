@@ -1,0 +1,225 @@
+version: "3.9"
+
+# PHX Offline AI Knowledge Appliance — Docker Compose
+# All services run on an isolated internal network.
+# No service makes outbound internet calls at runtime.
+
+networks:
+  phx-net:
+    driver: bridge
+    internal: false  # set to true in fully air-gapped environments after pulling images
+
+volumes:
+  phx_postgres_data:
+  phx_qdrant_storage:
+  phx_ollama_models:
+  phx_parsed_cache:
+  phx_api_logs:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # phx-postgres: Application metadata store
+  # Stores users, roles, sources, sync jobs, audit logs
+  # ---------------------------------------------------------------------------
+  phx-postgres:
+    image: postgres:16-alpine
+    container_name: phx-postgres
+    restart: unless-stopped
+    networks:
+      - phx-net
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-phx}
+      POSTGRES_USER: ${POSTGRES_USER:-phx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - phx_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phx} -d ${POSTGRES_DB:-phx}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "127.0.0.1:5432:5432"  # localhost only — not exposed externally
+
+  # ---------------------------------------------------------------------------
+  # phx-qdrant: Vector database for chunks and embeddings
+  # ---------------------------------------------------------------------------
+  phx-qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: phx-qdrant
+    restart: unless-stopped
+    networks:
+      - phx-net
+    volumes:
+      - phx_qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    ports:
+      - "127.0.0.1:6333:6333"  # localhost only
+
+  # ---------------------------------------------------------------------------
+  # phx-ollama: Local LLM and embedding inference
+  # Models are stored in phx_ollama_models volume (persist across restarts)
+  # ---------------------------------------------------------------------------
+  phx-ollama:
+    image: ollama/ollama:latest
+    container_name: phx-ollama
+    restart: unless-stopped
+    networks:
+      - phx-net
+    volumes:
+      - phx_ollama_models:/root/.ollama
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+    # Entrypoint pulls required models on first start if not already present
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        SERVER_PID=$$!
+        echo "Waiting for Ollama to start..."
+        until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 2; done
+        echo "Pulling LLM model: ${OLLAMA_LLM_MODEL:-llama3.2}"
+        ollama pull ${OLLAMA_LLM_MODEL:-llama3.2} || true
+        echo "Pulling embedding model: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+        ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text} || true
+        echo "Models ready."
+        wait $$SERVER_PID
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s  # model pull can take time
+    ports:
+      - "127.0.0.1:11434:11434"  # localhost only
+
+  # ---------------------------------------------------------------------------
+  # phx-api: FastAPI backend — auth, retrieval, RAG, audit
+  # ---------------------------------------------------------------------------
+  phx-api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    container_name: phx-api
+    restart: unless-stopped
+    networks:
+      - phx-net
+    depends_on:
+      phx-postgres:
+        condition: service_healthy
+      phx-qdrant:
+        condition: service_healthy
+      phx-ollama:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-phx-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-phx}
+      POSTGRES_USER: ${POSTGRES_USER:-phx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-8}
+      QDRANT_HOST: ${QDRANT_HOST:-phx-qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-phx_chunks}
+      OLLAMA_HOST: ${OLLAMA_HOST:-phx-ollama}
+      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+      OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-llama3.2}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
+      TENANT_ID: ${TENANT_ID:-default}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - phx_api_logs:/app/logs
+      - ../config/customer-template:/app/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "127.0.0.1:8000:8000"  # reverse-proxied by phx-ui in prod
+
+  # ---------------------------------------------------------------------------
+  # phx-ingest: Document and database ingestion worker
+  # Runs on a schedule; can also be triggered manually
+  # ---------------------------------------------------------------------------
+  phx-ingest:
+    build:
+      context: ../services/ingest
+      dockerfile: Dockerfile
+    container_name: phx-ingest
+    restart: unless-stopped
+    networks:
+      - phx-net
+    depends_on:
+      phx-postgres:
+        condition: service_healthy
+      phx-qdrant:
+        condition: service_healthy
+      phx-ollama:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-phx-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-phx}
+      POSTGRES_USER: ${POSTGRES_USER:-phx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      QDRANT_HOST: ${QDRANT_HOST:-phx-qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-phx_chunks}
+      OLLAMA_HOST: ${OLLAMA_HOST:-phx-ollama}
+      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
+      TENANT_ID: ${TENANT_ID:-default}
+      INGEST_DATA_ROOT: ${INGEST_DATA_ROOT:-/customer_data}
+      SOURCES_CONFIG_PATH: ${SOURCES_CONFIG_PATH:-/app/config/sources.yaml}
+      INGEST_SCHEDULE_SECONDS: ${INGEST_SCHEDULE_SECONDS:-3600}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - phx_parsed_cache:/app/cache
+      # Customer data mounts — read-only
+      - /mnt/customer-shares/shared:/customer_data/shared:ro
+      - /mnt/customer-shares/operations:/customer_data/operations:ro
+      - /mnt/customer-shares/hr:/customer_data/hr:ro
+      - /mnt/customer-shares/management:/customer_data/management:ro
+      # Source config
+      - ../config/customer-template:/app/config:ro
+
+  # ---------------------------------------------------------------------------
+  # phx-ui: Internal web chat UI
+  # Serves the React SPA; proxies /api/ to phx-api
+  # ---------------------------------------------------------------------------
+  phx-ui:
+    build:
+      context: ../services/ui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    container_name: phx-ui
+    restart: unless-stopped
+    networks:
+      - phx-net
+    depends_on:
+      phx-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "0.0.0.0:3000:80"  # UI is accessible on the LAN

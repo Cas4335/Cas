@@ -1,0 +1,46 @@
+# Secrets and environment
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+.cache/
+
+# Docker
+*.tar
+release-bundle/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Alembic
+services/api/migrations/versions/*.pyc
